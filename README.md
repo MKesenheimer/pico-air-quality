@@ -10,7 +10,7 @@ Copy and modify the file `pico-mqtt/crypto_consts_example.h`:
 ```
 cp pico-mqtt/crypto_consts_example.h pico-mqtt/crypto_consts.h
 ```
-
+Populate the variables with desired values.
 
 Build and flash the project:
 ```
