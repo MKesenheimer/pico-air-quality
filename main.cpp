@@ -1,0 +1,209 @@
+#include <stdio.h>
+#include <stdint.h>
+#include <string>
+#include <sstream>
+#include <iostream>
+#include "pico/stdlib.h"
+#include "hardware/i2c.h"
+#include "hardware/gpio.h"
+#include "pico/binary_info.h"
+#include "pico-ccs811/ccs811.h"
+extern "C" {
+#include "pico-mqtt/pico_mqtt.h"
+}
+
+const uint DHT_PIN = 12;
+const uint MAX_TIMINGS = 85;
+const uint CCS811_WAKE_PIN = 3;
+const uint CCS811_SDA_PIN = 4;
+const uint CCS811_SCL_PIN = 5;
+
+// TODO: 
+// - ccs811 in extra git submodule
+// - ccs811 refactoring
+// - picow_iot in extra git submodule -> "pico_mqtt"
+// - picow_iot refactoring
+
+typedef struct {
+    float humidity;
+    float temp_celsius;
+} dht_reading;
+
+void read_from_dht(dht_reading *result) {
+    int data[5] = {0, 0, 0, 0, 0};
+    uint last = 1;
+    uint j = 0;
+
+    gpio_set_dir(DHT_PIN, GPIO_OUT);
+    gpio_put(DHT_PIN, 0);
+    sleep_ms(18);
+    gpio_put(DHT_PIN, 1);
+    sleep_us(40);
+    gpio_set_dir(DHT_PIN, GPIO_IN);
+
+    for (uint i = 0; i < MAX_TIMINGS; i++) {
+        uint count = 0;
+        while (gpio_get(DHT_PIN) == last) {
+            count++;
+            sleep_us(1);
+            if (count == 255) break;
+        }
+        last = gpio_get(DHT_PIN);
+        if (count == 255) break;
+
+        if ((i >= 4) && (i % 2 == 0)) {
+            data[j / 8] <<= 1;
+            if (count > 46) data[j / 8] |= 1;
+            j++;
+        }
+    }
+
+    if ((j >= 40) && (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF))) {
+        result->humidity = (float) ((data[0] << 8) + data[1]) / 10;
+        if (result->humidity > 100) {
+            result->humidity = data[0];
+        }
+        result->temp_celsius = (float) (((data[2] & 0x7F) << 8) + data[3]) / 10;
+        if (result->temp_celsius > 125) {
+            result->temp_celsius = data[2];
+        }
+        if (data[2] & 0x80) {
+            result->temp_celsius = -result->temp_celsius;
+        }
+    } else {
+        //printf("%d %d %d", data[0], data[1], data[2]);
+        printf("DHT11: Bad data\n");
+    }
+}
+
+/*
+//#include "tusb.h"
+void wait_for_usb() {
+    while (!tud_cdc_connected()) {
+        printf(".");
+        sleep_ms(500);
+    }
+    printf("usb host detected\n");
+}*/
+
+template<typename _T>
+std::string number_to_str(_T number) {
+    std::stringstream strs;
+    strs << number;
+    return strs.str();
+}
+
+int main() {
+    // setup
+    stdio_init_all();
+    // if you want to debug over usb, include the function wait_for_usb and define
+    // pico_enable_stdio_usb(${CMAKE_PROJECT_NAME} 1)
+    // in CMakeLists.txt
+    //wait_for_usb();
+
+    if (cyw43_arch_init()) {
+        printf("Failed to initialize\n");
+        return 1;
+    }
+    cyw43_arch_enable_sta_mode();
+
+    // Set up our UART with a basic baud rate.
+    uart_init(uart0, 115200);
+    gpio_set_function(17, GPIO_FUNC_UART);
+    gpio_set_function(16, GPIO_FUNC_UART);
+
+    std::cout << "AirQuality Sensor" << std::endl;
+
+    // init DHT11
+    gpio_init(DHT_PIN);
+    gpio_pull_up(DHT_PIN);
+
+    // Initialize I2C on i2c0 port with 400kHz
+    i2c_init(i2c0, 400000);
+    gpio_set_function(CCS811_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(CCS811_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(CCS811_SDA_PIN);
+    gpio_pull_up(CCS811_SCL_PIN);
+    // init CCS811
+    CCS811 ccs811(CCS811_WAKE_PIN);
+    ccs811.set_i2cdelay(50); // Needed for ESP8266 because it doesn't handle I2C clock stretch correctly
+    bool ok = ccs811.init();
+    if(!ok) 
+        std::cout << "setup: CCS811 init failed." << std::endl;
+
+    std::cout << "CCS811: Hardware version: " << ccs811.hardware_version() << std::endl;
+    std::cout << "CCS811: bootloader version: " << ccs811.bootloader_version() << std::endl;
+    std::cout << "CCS811: application version: " << ccs811.application_version() << std::endl;
+
+    ok = ccs811.start(CCS811_MODE_60SEC);
+    if(!ok) 
+        std::cout << "setup: CCS811 start FAILED" << std::endl;
+
+    printf("Connecting to WiFi...\n");
+    if (cyw43_arch_wifi_connect_timeout_ms(SSID, PSK, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+        printf("failed to  connect.\n");
+        return 1;
+    } else {
+        printf("Connected.\n");
+    }
+
+    // new MQTT client
+    MQTT_CLIENT_T *state = mqtt_client_init(); 
+    run_dns_lookup(state);
+    mqtt_connect_and_wait(state);
+
+    while (1) {
+        // DHT11 measurements
+        dht_reading reading;
+        read_from_dht(&reading);
+        float fahrenheit = (reading.temp_celsius * 9 / 5) + 32;
+        printf("Humidity = %.1f%%, Temperature = %.1fC (%.1fF)\n",
+               reading.humidity, reading.temp_celsius, fahrenheit);
+
+        // pass environment data to CCS811
+        ccs811.set_envdata_Celsius_percRH(reading.temp_celsius, reading.humidity);
+
+        uint16_t eco2, etvoc, errstat, raw;
+        ccs811.read(&eco2, &etvoc, &errstat, &raw); 
+
+        // CCS811 measurements
+        if(errstat == CCS811_ERRSTAT_OK) { 
+            std::cout << "CCS811: " << std::endl;
+            std::cout << "eco2 = " << eco2 << " ppm" << std::endl;
+            std::cout << "etvoc = " << etvoc << " ppb" << std::endl;
+            //std::cout << "raw6 = " << raw / 1024 << " uA" << std::endl; 
+            //std::cout << "raw10 = " << raw % 1024 << " ADC" << std::endl;
+            //std::cout << "R = " << (1650 * 1000L / 1023) * (raw % 1024) / (raw / 1024) << " ohm" << std::endl;
+            std::cout << std::endl;
+        } else if(errstat == CCS811_ERRSTAT_OK_NODATA) {
+            std::cout << "CCS811: waiting for (new) data" << std::endl;
+        } else if(errstat & CCS811_ERRSTAT_I2CFAIL) { 
+            std::cout << "CCS811: I2C error" << std::endl;
+        } else {
+            std::cout << "CCS811: errstat = " << errstat << " = " << ccs811.errstat_str(errstat) << std::endl;
+        }
+
+        mqtt_publish_prepare(state);
+        std::string global_topic = "/home/office3/";
+        std::string topic = global_topic + "temperature";
+        std::string value = number_to_str(reading.temp_celsius);
+        mqtt_publish_value(state, topic.c_str(), value.c_str());
+
+        topic = global_topic + "humidity";
+        value = number_to_str(reading.humidity);
+        mqtt_publish_value(state, topic.c_str(), value.c_str());
+
+        topic = global_topic + "co2";
+        value = number_to_str(eco2);
+        mqtt_publish_value(state, topic.c_str(), value.c_str());
+
+        topic = global_topic + "tvoc";
+        value = number_to_str(etvoc);
+        mqtt_publish_value(state, topic.c_str(), value.c_str());
+
+        sleep_ms(60000);
+    }
+
+    cyw43_arch_deinit();
+    return 0;
+}

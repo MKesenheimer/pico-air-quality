@@ -1,0 +1,6 @@
+[submodule "pico-mqtt"]
+	path = pico-mqtt
+	url = https://github.com/mkesenheimer/pico-mqtt
+[submodule "pico-ccs811"]
+	path = pico-ccs811
+	url = https://github.com/mkesenheimer/pico-ccs811
