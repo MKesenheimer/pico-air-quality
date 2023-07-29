@@ -1,13 +1,26 @@
-# Raspberry Pico Step Counter
+# Raspberry Pi Pico Air Quality Sensor
 Set up raspberry pi pico projects according the official [documentation](https://projects.raspberrypi.org/en/projects/getting-started-with-the-pico).
+
+Clone this project:
+```
+git clone --recurse-submodules git@github.com:MKesenheimer/pico-air-quality.git
+```
+
+Copy and modify the file `pico-mqtt/crypto_consts_example.h`:
+```
+cp pico-mqtt/crypto_consts_example.h pico-mqtt/crypto_consts.h
+```
+
 
 Build and flash the project:
 ```
 mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Debug ..
+cmake ..
 make -j4
 make flash
 ```
+
+##
 
 ## Flash with Pico Probe
 ```
