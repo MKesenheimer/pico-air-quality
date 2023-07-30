@@ -79,6 +79,7 @@
         "semaphore": "cpp",
         "stop_token": "cpp",
         "variant": "cpp",
-        "crypto_consts.h": "c"
+        "crypto_consts.h": "c",
+        "iomanip": "cpp"
     }
 }

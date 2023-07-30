@@ -11,6 +11,7 @@ Copy and modify the file `pico-mqtt/crypto_consts_example.h`:
 cp pico-mqtt/crypto_consts_example.h pico-mqtt/crypto_consts.h
 ```
 Populate the variables with desired values.
+Update the variable `SENSOR_LOCATION` in `main.cpp` to your liking.
 
 Build and flash the project:
 ```
@@ -18,6 +19,11 @@ mkdir build && cd build
 cmake ..
 make -j4
 make flash
+```
+
+Test your setup by setting up a MQTT subscriber:
+```
+mosquitto_sub -h 192.168.2.28 -p 1883 -u <CLIENT_USER> -P <CLIENT_PASSWORD> -t '/home/office3/tvoc'
 ```
 
 ##

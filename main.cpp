@@ -3,6 +3,7 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
@@ -12,6 +13,7 @@ extern "C" {
 #include "pico-mqtt/pico_mqtt.h"
 }
 
+const char* SENSOR_LOCATION = "/home/office3/";
 const uint DHT_PIN = 12;
 const uint MAX_TIMINGS = 85;
 const uint CCS811_WAKE_PIN = 3;
@@ -19,10 +21,9 @@ const uint CCS811_SDA_PIN = 4;
 const uint CCS811_SCL_PIN = 5;
 
 // TODO: 
-// - ccs811 in extra git submodule
 // - ccs811 refactoring
-// - picow_iot in extra git submodule -> "pico_mqtt"
-// - picow_iot refactoring
+// - add CMakeFiles to pico_mqtt project
+// - pico_mqtt refactoring
 
 typedef struct {
     float humidity;
@@ -71,8 +72,7 @@ void read_from_dht(dht_reading *result) {
             result->temp_celsius = -result->temp_celsius;
         }
     } else {
-        //printf("%d %d %d", data[0], data[1], data[2]);
-        printf("DHT11: Bad data\n");
+        std::cout << "DHT11: Bad data" << std::endl;
     }
 }
 
@@ -80,10 +80,10 @@ void read_from_dht(dht_reading *result) {
 //#include "tusb.h"
 void wait_for_usb() {
     while (!tud_cdc_connected()) {
-        printf(".");
+        std::cout << ".";
         sleep_ms(500);
     }
-    printf("usb host detected\n");
+    std::cout << "usb host detected\n";
 }*/
 
 template<typename _T>
@@ -102,7 +102,7 @@ int main() {
     //wait_for_usb();
 
     if (cyw43_arch_init()) {
-        printf("Failed to initialize\n");
+        std::cout << "Failed to initialize" << std::endl;
         return 1;
     }
     cyw43_arch_enable_sta_mode();
@@ -129,7 +129,7 @@ int main() {
     ccs811.set_i2cdelay(50); // Needed for ESP8266 because it doesn't handle I2C clock stretch correctly
     bool ok = ccs811.init();
     if(!ok) 
-        std::cout << "setup: CCS811 init failed." << std::endl;
+        std::cout << "CCS811: init failed." << std::endl;
 
     std::cout << "CCS811: Hardware version: " << ccs811.hardware_version() << std::endl;
     std::cout << "CCS811: bootloader version: " << ccs811.bootloader_version() << std::endl;
@@ -137,14 +137,14 @@ int main() {
 
     ok = ccs811.start(CCS811_MODE_60SEC);
     if(!ok) 
-        std::cout << "setup: CCS811 start FAILED" << std::endl;
+        std::cout << "CCS811: setup FAILED" << std::endl;
 
-    printf("Connecting to WiFi...\n");
+    std::cout << "Connecting to WiFi..." << std::endl;
     if (cyw43_arch_wifi_connect_timeout_ms(SSID, PSK, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-        printf("failed to  connect.\n");
+        std::cout << "failed to  connect." << std::endl;
         return 1;
     } else {
-        printf("Connected.\n");
+        std::cout << "Connected." << std::endl;
     }
 
     // new MQTT client
@@ -157,9 +157,8 @@ int main() {
         dht_reading reading;
         read_from_dht(&reading);
         float fahrenheit = (reading.temp_celsius * 9 / 5) + 32;
-        printf("Humidity = %.1f%%, Temperature = %.1fC (%.1fF)\n",
-               reading.humidity, reading.temp_celsius, fahrenheit);
-
+        std::cout << "Humidity = " << std::setprecision(1) << reading.humidity << "%, ";
+        std::cout << "Temperature = " << std::setprecision(1) << reading.temp_celsius << "C" << std::endl;
         // pass environment data to CCS811
         ccs811.set_envdata_Celsius_percRH(reading.temp_celsius, reading.humidity);
 
@@ -168,8 +167,7 @@ int main() {
 
         // CCS811 measurements
         if(errstat == CCS811_ERRSTAT_OK) { 
-            std::cout << "CCS811: " << std::endl;
-            std::cout << "eco2 = " << eco2 << " ppm" << std::endl;
+            std::cout << "eco2 = " << eco2 << " ppm, ";
             std::cout << "etvoc = " << etvoc << " ppb" << std::endl;
             //std::cout << "raw6 = " << raw / 1024 << " uA" << std::endl; 
             //std::cout << "raw10 = " << raw % 1024 << " ADC" << std::endl;
@@ -184,10 +182,13 @@ int main() {
         }
 
         mqtt_publish_prepare(state);
-        std::string global_topic = "/home/office3/";
+        std::string global_topic = std::string(SENSOR_LOCATION);
+        
         std::string topic = global_topic + "temperature";
         std::string value = number_to_str(reading.temp_celsius);
-        mqtt_publish_value(state, topic.c_str(), value.c_str());
+        err_t err = mqtt_publish_value(state, topic.c_str(), value.c_str());
+        if(err != ERR_OK)
+            std::cout << "Publish err: " << err << std::endl;
 
         topic = global_topic + "humidity";
         value = number_to_str(reading.humidity);
