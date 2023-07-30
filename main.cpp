@@ -186,21 +186,30 @@ int main() {
         
         std::string topic = global_topic + "temperature";
         std::string value = number_to_str(reading.temp_celsius);
-        err_t err = mqtt_publish_value(state, topic.c_str(), value.c_str());
-        if(err != ERR_OK)
-            std::cout << "Publish err: " << err << std::endl;
+        err_t err[4];
+        err[0] = mqtt_publish_value(state, topic.c_str(), value.c_str());
 
         topic = global_topic + "humidity";
         value = number_to_str(reading.humidity);
-        mqtt_publish_value(state, topic.c_str(), value.c_str());
+        err[1] = mqtt_publish_value(state, topic.c_str(), value.c_str());
 
         topic = global_topic + "co2";
         value = number_to_str(eco2);
-        mqtt_publish_value(state, topic.c_str(), value.c_str());
+        err[2] = mqtt_publish_value(state, topic.c_str(), value.c_str());
 
         topic = global_topic + "tvoc";
         value = number_to_str(etvoc);
-        mqtt_publish_value(state, topic.c_str(), value.c_str());
+        err[3] = mqtt_publish_value(state, topic.c_str(), value.c_str());
+
+        bool ok = true;
+        for (size_t i = 0; i < 4; ++i) {
+            if (err[i] != ERR_OK) {
+                std::cout << "Publish err (" << i << "): " << err << std::endl;
+                ok = false;
+            }
+        }
+        if (ok)
+            std::cout << "Successfully published all MQTT messages." << std::endl;
 
         sleep_ms(60000);
     }
