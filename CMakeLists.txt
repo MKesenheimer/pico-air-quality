@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 set(PICO_SDK_FETCH_FROM_GIT on)
 include(pico_sdk_import.cmake)
 
-project(air-quality
+project(pico-air-quality
         LANGUAGES ASM C CXX
         VERSION 1.0
         DESCRIPTION "Air Quality Sensor"

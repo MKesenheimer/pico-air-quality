@@ -139,7 +139,7 @@ int main() {
     if(!ok) 
         std::cout << "CCS811: setup FAILED" << std::endl;
 
-    std::cout << "Connecting to WiFi..." << std::endl;
+    std::cout << "Connecting to WiFi... ";
     if (cyw43_arch_wifi_connect_timeout_ms(SSID, PSK, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
         std::cout << "failed to  connect." << std::endl;
         return 1;
@@ -172,7 +172,6 @@ int main() {
             //std::cout << "raw6 = " << raw / 1024 << " uA" << std::endl; 
             //std::cout << "raw10 = " << raw % 1024 << " ADC" << std::endl;
             //std::cout << "R = " << (1650 * 1000L / 1023) * (raw % 1024) / (raw / 1024) << " ohm" << std::endl;
-            std::cout << std::endl;
         } else if(errstat == CCS811_ERRSTAT_OK_NODATA) {
             std::cout << "CCS811: waiting for (new) data" << std::endl;
         } else if(errstat & CCS811_ERRSTAT_I2CFAIL) { 
@@ -201,16 +200,20 @@ int main() {
         value = number_to_str(etvoc);
         err[3] = mqtt_publish_value(state, topic.c_str(), value.c_str());
 
+        // test
+        mqtt_publish_prepare(state);
+
         bool ok = true;
         for (size_t i = 0; i < 4; ++i) {
             if (err[i] != ERR_OK) {
-                std::cout << "Publish err (" << i << "): " << err << std::endl;
+                std::cout << "Publish err (" << i << "): " << static_cast<int16_t>(err[i]) << std::endl;
                 ok = false;
             }
         }
         if (ok)
             std::cout << "Successfully published all MQTT messages." << std::endl;
-
+        std::cout << std::endl;
+        
         sleep_ms(60000);
     }
 
