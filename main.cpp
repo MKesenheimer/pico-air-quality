@@ -14,7 +14,7 @@ extern "C" {
 }
 #include "pico/time.h"
 
-const char* SENSOR_LOCATION = "/home/office3/";
+const char* SENSOR_LOCATION = MQTT_TOPIC_BASE;
 const uint DHT_PIN = 12;
 const uint MAX_TIMINGS = 85;
 const uint CCS811_WAKE_PIN = 3;
@@ -94,6 +94,45 @@ std::string number_to_str(_T number) {
     return strs.str();
 }
 
+void blink_led(const unsigned int delay, const unsigned int number) {
+    if (number == 0) {
+        while (1) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            sleep_ms(delay);
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            sleep_ms(delay);
+        }
+    } else {
+        for (int i = 0; i < number; ++i) {
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+            sleep_ms(delay);
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+            sleep_ms(delay);
+        }
+    }
+}
+
+void connect_to_wifi() {
+    std::cout << "Connecting to WiFi... ";
+    if (cyw43_arch_wifi_connect_timeout_ms(SSID, PSK, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
+        std::cout << "failed to  connect." << std::endl;
+        // fast blinking indicates connection issues
+        blink_led(100, 100);
+    } else {
+        std::cout << "Connected." << std::endl;
+        blink_led(250, 2);
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+    }
+}
+
+void set_host_name(const char* hostname) {
+    cyw43_arch_lwip_begin();
+    struct netif *n = &cyw43_state.netif[CYW43_ITF_STA];
+    netif_set_hostname(n, hostname);
+    netif_set_up(n);
+    cyw43_arch_lwip_end();
+}
+
 int main() {
     // setup
     stdio_init_all();
@@ -140,18 +179,16 @@ int main() {
     if(!ok) 
         std::cout << "CCS811: setup FAILED" << std::endl;
 
-    std::cout << "Connecting to WiFi... ";
-    if (cyw43_arch_wifi_connect_timeout_ms(SSID, PSK, CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-        std::cout << "failed to  connect." << std::endl;
-        return 1;
-    } else {
-        std::cout << "Connected." << std::endl;
-    }
+    // connect to wifi
+    set_host_name(CLIENT_ID);
+    connect_to_wifi();
 
     // new MQTT client
     MQTT_CLIENT_T *state = mqtt_client_init(); 
-    run_dns_lookup(state);
-    mqtt_connect_and_wait(state);
+    run_dns_lookup(state); // load the IP address of mqtt server (either by dns or fixed IP)
+    while (mqtt_connect_and_wait(state, 60) != ERR_OK) {
+        connect_to_wifi();
+    }
 
     while (1) {
         // DHT11 measurements
@@ -181,7 +218,11 @@ int main() {
             std::cout << "CCS811: errstat = " << errstat << " = " << ccs811.errstat_str(errstat) << std::endl;
         }
 
-        mqtt_publish_prepare(state);
+        if (mqtt_publish_prepare(state, 60) != ERR_OK) {
+            // connection failed, slow blinking 10 times
+            blink_led(1000, 10);
+            connect_to_wifi();
+        }
         std::string global_topic = std::string(SENSOR_LOCATION);
         
         std::string topic = global_topic + "temperature";
@@ -201,8 +242,11 @@ int main() {
         value = number_to_str(etvoc);
         err[3] = mqtt_publish_value(state, topic.c_str(), value.c_str());
 
-        // test
-        mqtt_publish_prepare(state);
+        if (mqtt_publish_prepare(state, 60) != ERR_OK) {
+            // connection failed, slow blinking 10 times
+            blink_led(1000, 10);
+            connect_to_wifi();
+        }
 
         bool ok = true;
         for (size_t i = 0; i < 4; ++i) {
@@ -211,11 +255,13 @@ int main() {
                 ok = false;
             }
         }
-        if (ok)
+        if (ok) {
             std::cout << "Successfully published all MQTT messages." << std::endl;
+            blink_led(250, 1);
+        }
         std::cout << std::endl;
         
-        sleep_ms(60000);
+        sleep_ms(10000);
     }
 
     cyw43_arch_deinit();
