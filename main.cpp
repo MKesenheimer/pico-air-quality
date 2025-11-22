@@ -12,6 +12,7 @@
 extern "C" {
 #include "pico-mqtt/pico_mqtt.h"
 }
+#include "pico/time.h"
 
 const char* SENSOR_LOCATION = "/home/office3/";
 const uint DHT_PIN = 12;

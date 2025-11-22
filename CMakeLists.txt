@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
+set(PICO_BOARD pico_w)
 set(PICO_SDK_FETCH_FROM_GIT on)
 include(pico_sdk_import.cmake)
 
@@ -11,8 +12,6 @@ project(pico-air-quality
 
 # set(CMAKE_C_STANDARD 11)
 # set(CMAKE_CXX_STANDARD 19)
-
-set(PICO_BOARD pico_w)
 
 if (PICO_SDK_VERSION_STRING VERSION_LESS "1.3.0")
     message(FATAL_ERROR "Raspberry Pi Pico SDK version 1.3.0 (or later) required. Your version is ${PICO_SDK_VERSION_STRING}")
@@ -43,19 +42,17 @@ target_compile_definitions(${CMAKE_PROJECT_NAME}
 target_include_directories(${CMAKE_PROJECT_NAME}
     PUBLIC
         ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/ccs811
+        ${CMAKE_CURRENT_LIST_DIR}/pico-ccs811
         ${CMAKE_CURRENT_LIST_DIR}/pico-mqtt
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
-  pico_stdlib
-  hardware_i2c
-  #hardware_spi
-  pico_cyw43_arch_lwip_poll
-  pico_stdlib
-  pico_lwip_mbedtls
-  pico_mbedtls
-  pico_lwip_mqtt
+    pico_stdlib
+    hardware_i2c
+    pico_cyw43_arch_lwip_poll
+    pico_lwip_mbedtls
+    pico_mbedtls
+    pico_lwip_mqtt
 )
 
 pico_add_extra_outputs(${CMAKE_PROJECT_NAME})
@@ -63,13 +60,13 @@ pico_add_extra_outputs(${CMAKE_PROJECT_NAME})
 
 # add flash target (make flash)
 add_custom_target(flash DEPENDS ${PROJECT_NAME}.elf)
-add_custom_command(TARGET flash
+add_custom_command(TARGET flash POST_BUILD
     USES_TERMINAL
     COMMAND sudo openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 5000" -c "program ${PROJECT_NAME}.elf verify reset exit")
 
 # add debug target (make debug)
 #set(CMAKE_C_GDB ${GCC_PATH}/arm-none-eabi-gdb CACHE PATH "" FORCE)
 add_custom_target(debug DEPENDS ${PROJECT_NAME}.elf)
-add_custom_command(TARGET debug
+add_custom_command(TARGET debug POST_BUILD
     USES_TERMINAL
     COMMAND xterm -e sudo openocd -f interface/cmsis-dap.cfg -f target/rp2040.cfg -c "adapter speed 5000" &)
